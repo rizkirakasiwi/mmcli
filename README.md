@@ -20,94 +20,142 @@ Expect frequent changes, breaking updates, and incomplete features.
 
 ## 📦 Installation
 
-Clone the repository and install dependencies:
+For the easiest installation, see the [Installation Guide](bin/INSTALL_README.md) which includes automated installation scripts.
+
+Or install manually:
 
 ```bash
 git clone https://github.com/rizkirakasiwi/mmcli.git
 cd mmcli
-pip install -r requirements.txt
-````
+pip install -e .
+```
+
+### Quick Install with pip
+```bash
+pip install mmcli
+```
 
 ---
 
 ## 🚀 Usage
 
-Run the CLI with `python`:
+After installation, use the `mmcli` command:
 
 ```bash
-python multimedia_cli.py [OPTIONS]
+mmcli --help
+mmcli --version
 ```
 
-### Modes
+### Commands
 
-You must choose **one mode**:
+MMCLI uses subcommands for different operations:
 
-* `--download` → Download from YouTube
-* `--convert` → Convert files
+* `mmcli download` → Download from YouTube
+* `mmcli convert` → Convert media files
 
 ### Download Examples
 
 ```bash
 # Download a video from YouTube
-python multimedia_cli.py --download --video https://youtube.com/watch?v=example
+mmcli download video --url "https://youtube.com/watch?v=example"
+
+# Download video with specific resolution
+mmcli download video --url "https://youtube.com/watch?v=example" --resolution 720p
 
 # Download audio only (MP3)
-python multimedia_cli.py --download --audio https://youtube.com/watch?v=example
+mmcli download audio --url "https://youtube.com/watch?v=example" --format mp3
 ```
 
 ### Convert Examples
 
 ```bash
 # Convert a single file
-python multimedia_cli.py --convert --path input.png --to jpg
+mmcli convert --path input.png --to jpg
 
 # Convert multiple files with wildcard pattern
-python multimedia_cli.py --convert --path "samples/*.avif" --to jpg
+mmcli convert --path "samples/*.avif" --to jpg
 
 # Convert and save to custom output directory
-python multimedia_cli.py --convert --path video.mp4 --to mp3 --output_dir converted/
+mmcli convert --path video.mp4 --to mp3 --output_dir converted/
+```
+
+### Development Usage
+
+If running from source without installation:
+
+```bash
+python bin/mmcli download video --url "https://youtube.com/watch?v=example"
+python bin/mmcli convert --path input.png --to jpg
 ```
 
 ---
 
 ## 🎯 Supported Formats
 
-* **Images:** `jpg`, `jpeg`, `png`, `webp`, `gif`, `bmp`, `tiff`
-* **Videos:** `mp4`, `avi`, `mkv`, `mov`, `webm`
+* **Images:** `jpg`, `jpeg`, `png`, `webp`, `gif`, `bmp`, `tiff`, `avif`
+* **Videos:** `mp4`, `avi`, `mkv`, `mov`, `webm`, `flv`, `3gp`
 * **Audio:** `mp3`, `wav`, `flac`, `aac`, `ogg`, `wma`, `m4a`
+* **Subtitles:** `srt`, `ass`, `vtt`
 
 ---
 
 ## ⚠️ Notes
 
-* Requires **Python 3.8+**
-* Make sure you have [ffmpeg](https://ffmpeg.org/download.html) installed and available in your `PATH` for conversions.
-* Downloads depend on the `pytube` (or similar) library, see `requirements.txt`.
+* Requires **Python 3.6+**
+* Make sure you have [ffmpeg](https://ffmpeg.org/download.html) installed and available in your `PATH` for conversions (the installation script can help with this)
+* Downloads use the `pytubefix` library for YouTube support
+* Package available on PyPI as `mmcli`
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Since this project is still at an **early stage**, any feedback, bug reports, or feature ideas are highly appreciated.
+We welcome contributions! Since this project is at an **early stage**, any feedback, bug reports, or feature ideas are highly appreciated.
 
-To contribute:
+**⚠️ Important**: All contributors must read our [Contributor Guidance](doc/CONTRIBUTOR_GUIDANCE.md) before submitting Pull Requests.
+
+### Quick Start for Contributors
 
 1. Fork the repository
-2. Create a new feature branch (`git checkout -b feature/my-feature`)
-3. Commit your changes (`git commit -m "Add my feature"`)
-4. Push to your fork (`git push origin feature/my-feature`)
-5. Open a Pull Request
+2. Read [doc/CONTRIBUTOR_GUIDANCE.md](doc/CONTRIBUTOR_GUIDANCE.md) 
+3. Set up development environment: `pip install -e .[test]`
+4. **Run tests before submitting**: `pytest`
+5. Create Pull Request
 
-Please make sure your code follows Python best practices and includes basic documentation or examples.
+**All tests must pass before PR submission** - see contributor guidance for details.
+
+### Project Structure
+
+```
+mmcli/
+├── app/
+│   ├── tools/          # Core functionality
+│   │   ├── media_converter.py
+│   │   └── media_downloader.py
+│   └── utils/          # Utilities
+│       ├── command_manager.py
+│       └── media_format.py
+├── bin/
+│   ├── mmcli           # Main CLI entry point
+│   └── install.*       # Installation scripts
+├── tests/              # Test suite
+├── samples/            # Sample files for testing
+└── main.py             # Application entry point
+```
 
 ---
 
 ## 🛠️ Roadmap / Ideas
 
-* [ ] Add progress bar for downloads and conversions
+* [ ] Allow YouTube playlist downloader 
 * [ ] Allow multiple YouTube URLs in one command
+* [ ] Download from other social media platforms
 * [ ] Add `--verbose` flag for detailed logs
 * [ ] Config file (`~/.mmcli/config.json`) for default output paths
+* [ ] Progress bars for downloads and conversions
+* [ ] Resume interrupted downloads
+* [ ] Metadata preservation during conversion
+* [ ] MMCLI as MCP (Model Context Protocol) 
 
 ---
 

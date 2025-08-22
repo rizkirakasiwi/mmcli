@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mmcli"
+version = "0.1.0a1"
+description = "A multimedia CLI tool for downloading and converting videos, audio, and images"
+authors = [{name = "rizkirakasiwi"}]
+dependencies = [
+    "ffmpeg-python",
+    "pytubefix",
+]
+requires-python = ">=3.6"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=6.0",
+    "pytest-mock>=3.0",
+    "pytest-cov>=3.0",
+]
+
+[project.scripts]
+mmcli = "main:main"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["samples*", "tests*", "venv*", "build*", "dist*"]
+
+[tool.setuptools]
+py-modules = ["main"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "*.txt"]

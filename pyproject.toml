@@ -19,6 +19,10 @@ test = [
     "pytest-mock>=3.0",
     "pytest-cov>=3.0",
 ]
+config = [
+    "tomli>=2.0.1; python_version < '3.11'",
+    "PyYAML>=6.0",
+]
 
 [project.scripts]
 mmcli = "main:main"

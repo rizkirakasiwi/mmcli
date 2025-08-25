@@ -99,3 +99,8 @@ def __convert_command(subparsers):
         "-o",
         help="(Optional) Output directory for converted files. default: converter/",
     )
+    convert_parser.add_argument(
+        "--max-workers", "-w",
+        type=int,
+        help="(Optional) Number of parallel conversions for batch operations (default: from config)"
+    )

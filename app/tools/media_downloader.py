@@ -2,14 +2,25 @@ import os
 import sys
 from typing import Optional, Dict, Any, List
 from functools import partial, reduce
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from ..utils.media_format import video_formats, get_format, audio_formats
+from ..utils.config import (
+    get_output_dir_default,
+    get_video_format_default,
+    get_audio_format_default,
+    get_video_resolution_default,
+    get_max_workers_default,
+    should_create_playlist_subfolders,
+    should_use_batch_convert,
+    config
+)
 from . import media_converter
 from . import youtube_downloader
 
 
 def get_output_dir() -> str:
-    """Get default output directory."""
-    return os.path.join(os.getcwd(), "downloads")
+    """Get default output directory from config."""
+    return os.path.join(os.getcwd(), get_output_dir_default())
 
 
 def ensure_directory_exists(path: str) -> str:
@@ -31,15 +42,15 @@ def get_format_or_default(format_arg: Optional[str], format_map: list, default: 
 
 
 def get_video_format_or_default(format_arg: Optional[str]) -> str:
-    """Get video format with default."""
-    return get_format_or_default(format_arg, video_formats, "mp4")
+    """Get video format with config default."""
+    return get_format_or_default(format_arg, video_formats, get_video_format_default())
 
 
 def get_audio_format_or_default(format_arg: Optional[str]) -> Optional[str]:
-    """Get audio format with default."""
+    """Get audio format with config default."""
     if format_arg is None:
         return None  # Return None to indicate no conversion needed
-    return get_format_or_default(format_arg, audio_formats, "m4a")
+    return get_format_or_default(format_arg, audio_formats, get_audio_format_default())
 
 
 def create_output_path(base_dir: str, media_type: str, subfolder: Optional[str] = None) -> str:
@@ -89,45 +100,58 @@ def convert_if_needed(downloaded_file: str, target_format: str, args) -> str:
 
 
 def create_download_config(args, media_type: str) -> Dict[str, Any]:
-    """Create download configuration object."""
+    """Create download configuration object with config defaults."""
     output_dir = get_output_dir()
     
     if media_type == "video":
         output_format = get_video_format_or_default(args.format)
         output_path = create_output_path(output_dir, "videos")
+        # Use config default resolution if not specified
+        resolution = getattr(args, 'resolution', None)
+        if resolution is None:
+            config_resolution = get_video_resolution_default()
+            resolution = None if config_resolution == "highest" else config_resolution
     else:  # audio
         output_format = get_audio_format_or_default(args.format)
         output_path = create_output_path(output_dir, "audios")
+        resolution = None
     
     return {
         "url": args.url,
         "output_dir": output_dir,
         "output_format": output_format,
         "output_path": ensure_directory_exists(output_path),
-        "resolution": getattr(args, 'resolution', None),
+        "resolution": resolution,
         "args": args
     }
 
 
 def create_playlist_config(args, media_type: str) -> Dict[str, Any]:
-    """Create playlist download configuration."""
+    """Create playlist download configuration with config options."""
     config = create_download_config(args, media_type)
     
-    # Get playlist title for subfolder
-    url_validation = youtube_downloader.validate_youtube_url(args.url)
-    if url_validation["is_valid"] and url_validation["is_playlist"]:
-        try:
-            playlist = youtube_downloader.create_playlist_instance(args.url)
-            playlist_title = playlist.title
-        except Exception:
+    # Get playlist title for subfolder if enabled in config
+    if should_create_playlist_subfolders():
+        url_validation = youtube_downloader.validate_youtube_url(args.url)
+        if url_validation["is_valid"] and url_validation["is_playlist"]:
+            try:
+                playlist = youtube_downloader.create_playlist_instance(args.url)
+                playlist_title = playlist.title
+            except Exception:
+                playlist_title = "unknown_playlist"
+        else:
             playlist_title = "unknown_playlist"
+        
+        playlist_base = create_output_path(config["output_dir"], "playlist")
+        config["output_path"] = ensure_directory_exists(
+            create_output_path(playlist_base, f"{media_type}s", playlist_title)
+        )
     else:
-        playlist_title = "unknown_playlist"
-    
-    playlist_base = create_output_path(config["output_dir"], "playlist")
-    config["output_path"] = ensure_directory_exists(
-        create_output_path(playlist_base, f"{media_type}s", playlist_title)
-    )
+        # Use simple playlist directory without title subfolder
+        playlist_base = create_output_path(config["output_dir"], "playlist")
+        config["output_path"] = ensure_directory_exists(
+            create_output_path(playlist_base, f"{media_type}s")
+        )
     
     return config
 
@@ -193,10 +217,11 @@ def batch_convert_playlist_files(downloaded_files: List[str], target_format: str
             self.path = files[0] if len(files) == 1 else f"{{{','.join(files)}}}"
             self.to = to
     
-    # Use media_converter for batch processing
+    # Use media_converter for batch processing with parallel support
     from pathlib import Path
     input_files = [Path(f) for f in files_to_convert]
-    conversion_results = media_converter.convert_files_functional(input_files, target_format)
+    max_workers = get_max_workers_default()
+    conversion_results = media_converter.convert_files_functional(input_files, target_format, max_workers=max_workers)
     
     # Clean up original files that were successfully converted
     for i, result in enumerate(conversion_results):
@@ -322,13 +347,25 @@ def download_single_audio(config: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def download_playlist_videos(config: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Download playlist videos using functional approach."""
+    """Download playlist videos using parallel or sequential approach based on config."""
     try:
-        results = youtube_downloader.download_playlist_videos(
-            config["url"],
-            config["output_path"],
-            config["resolution"]
-        )
+        max_workers = get_max_workers_default()
+        
+        if max_workers <= 1:
+            # Sequential download
+            results = youtube_downloader.download_playlist_videos(
+                config["url"],
+                config["output_path"],
+                config["resolution"]
+            )
+        else:
+            # Parallel download
+            results = youtube_downloader.download_playlist_videos_parallel(
+                config["url"],
+                config["output_path"],
+                config["resolution"],
+                max_workers=max_workers
+            )
         
         return process_playlist_results(results, config)
         
@@ -342,12 +379,23 @@ def download_playlist_videos(config: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def download_playlist_audios(config: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Download playlist audios using functional approach."""
+    """Download playlist audios using parallel or sequential approach based on config."""
     try:
-        results = youtube_downloader.download_playlist_audios(
-            config["url"],
-            config["output_path"]
-        )
+        max_workers = get_max_workers_default()
+        
+        if max_workers <= 1:
+            # Sequential download
+            results = youtube_downloader.download_playlist_audios(
+                config["url"],
+                config["output_path"]
+            )
+        else:
+            # Parallel download
+            results = youtube_downloader.download_playlist_audios_parallel(
+                config["url"],
+                config["output_path"],
+                max_workers=max_workers
+            )
         
         return process_playlist_results(results, config)
         

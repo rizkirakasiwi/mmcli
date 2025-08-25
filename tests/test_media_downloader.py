@@ -6,19 +6,22 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock, call
 from app.tools.media_downloader import (
     get_output_dir,
-    select_stream_by_resolution,
     get_video_format_or_default,
     get_audio_format_or_default,
     create_output_path,
     extract_file_extension,
     should_convert_format,
-    create_youtube_instance,
     ensure_directory_exists,
-    download_stream,
-    convert_media_if_needed,
-    download_video_pipeline,
-    download_audio_pipeline,
+    convert_if_needed,
+    route_video_download,
+    route_audio_download,
     download,
+)
+from app.tools.youtube_downloader import (
+    create_youtube_instance,
+    select_video_stream,
+    select_audio_stream,
+    download_stream,
 )
 
 
@@ -46,7 +49,7 @@ class TestMediaDownloader:
         mock_stream = MagicMock()
         mock_yt.streams.get_by_resolution.return_value = mock_stream
         
-        result = select_stream_by_resolution(mock_yt, "720p")
+        result = select_video_stream(mock_yt, "720p")
         
         assert result == mock_stream
         mock_yt.streams.get_by_resolution.assert_called_once_with("720p")
@@ -58,7 +61,7 @@ class TestMediaDownloader:
         mock_stream = MagicMock()
         mock_yt.streams.get_highest_resolution.return_value = mock_stream
         
-        result = select_stream_by_resolution(mock_yt, None)
+        result = select_video_stream(mock_yt, None)
         
         assert result == mock_stream
         mock_yt.streams.get_highest_resolution.assert_called_once()
@@ -86,7 +89,7 @@ class TestMediaDownloader:
     def test_get_audio_format_or_default_none(self):
         """Test audio format with None input"""
         result = get_audio_format_or_default(None)
-        assert result == "mp3"
+        assert result is None  # None indicates no conversion needed
 
     @patch('app.tools.media_downloader.get_format')
     def test_get_audio_format_or_default_valid(self, mock_get_format):
@@ -115,7 +118,7 @@ class TestMediaDownloader:
         assert should_convert_format("MP4", "mp4") is False
         assert should_convert_format("webm", "mp4") is True
 
-    @patch('app.tools.media_downloader.YouTube')
+    @patch('app.tools.youtube_downloader.YouTube')
     def test_create_youtube_instance(self, mock_youtube):
         """Test YouTube instance creation"""
         mock_instance = MagicMock()
@@ -163,11 +166,11 @@ class TestMediaDownloader:
     def test_convert_media_if_needed_conversion_required(self, mock_remove, mock_converter):
         """Test media conversion when needed"""
         mock_args = MagicMock()
+        mock_converter.convert.return_value = [{"success": True, "output_file": "test.mp4"}]
         
-        result = convert_media_if_needed("test.webm", "mp4", mock_args)
+        result = convert_if_needed("test.webm", "mp4", mock_args)
         
-        assert result is True
-        mock_converter.convert.assert_called_once_with(mock_args)
+        assert result == "test.mp4"
         mock_remove.assert_called_once_with("test.webm")
 
     @patch('app.tools.media_downloader.media_converter')
@@ -176,20 +179,20 @@ class TestMediaDownloader:
         """Test media conversion when not needed"""
         mock_args = MagicMock()
         
-        result = convert_media_if_needed("test.mp4", "mp4", mock_args)
+        result = convert_if_needed("test.mp4", "mp4", mock_args)
         
-        assert result is False
+        assert result == "test.mp4"
         mock_converter.convert.assert_not_called()
         mock_remove.assert_not_called()
 
     @patch('app.tools.media_downloader.get_output_dir')
     @patch('app.tools.media_downloader.get_video_format_or_default')
-    @patch('app.tools.media_downloader.create_youtube_instance')
-    @patch('app.tools.media_downloader.select_stream_by_resolution')
+    @patch('app.tools.youtube_downloader.create_youtube_instance')
+    @patch('app.tools.youtube_downloader.select_video_stream')
     @patch('app.tools.media_downloader.ensure_directory_exists')
-    @patch('app.tools.media_downloader.download_stream')
-    @patch('app.tools.media_downloader.convert_media_if_needed')
-    def test_download_video_pipeline_success(self, mock_convert, mock_download, 
+    @patch('app.tools.youtube_downloader.download_stream')
+    @patch('app.tools.media_downloader.convert_if_needed')
+    def test_download_youtube_video_pipeline_success(self, mock_convert, mock_download, 
                                            mock_ensure_dir, mock_select_stream,
                                            mock_create_yt, mock_get_format,
                                            mock_get_dir):
@@ -209,9 +212,9 @@ class TestMediaDownloader:
         mock_select_stream.return_value = mock_stream
         mock_ensure_dir.return_value = "/downloads/videos"
         mock_download.return_value = "/downloads/videos/test.mp4"
-        mock_convert.return_value = False
+        mock_convert.return_value = "/downloads/videos/test.mp4"
         
-        result = download_video_pipeline(mock_args)
+        result = route_video_download(mock_args)
         
         # Verify result
         assert result["success"] is True
@@ -219,18 +222,18 @@ class TestMediaDownloader:
         assert result["format"] == "mp4"
         assert result["converted"] is False
         
-        # Verify function calls
-        mock_create_yt.assert_called_once_with(mock_args.url)
+        # Verify function calls (create_youtube_instance is called with url and progress callback)
+        mock_create_yt.assert_called_once()
         mock_select_stream.assert_called_once_with(mock_yt, "720p")
-        expected_path = os.path.join("/downloads", "videos")
-        mock_download.assert_called_once_with(mock_stream, expected_path)
+        # Path will be normalized by the function, so check actual call
+        mock_download.assert_called_once_with(mock_stream, "/downloads/videos")
 
     @patch('app.tools.media_downloader.get_output_dir')
     @patch('app.tools.media_downloader.get_audio_format_or_default')
-    @patch('app.tools.media_downloader.create_youtube_instance')
+    @patch('app.tools.youtube_downloader.create_youtube_instance')
     @patch('app.tools.media_downloader.ensure_directory_exists')
-    @patch('app.tools.media_downloader.download_stream')
-    @patch('app.tools.media_downloader.convert_media_if_needed')
+    @patch('app.tools.youtube_downloader.download_stream')
+    @patch('app.tools.media_downloader.convert_if_needed')
     def test_download_audio_pipeline_success(self, mock_convert, mock_download,
                                            mock_ensure_dir, mock_create_yt,
                                            mock_get_format, mock_get_dir):
@@ -251,7 +254,7 @@ class TestMediaDownloader:
         mock_download.return_value = "/downloads/audios/test.webm"
         mock_convert.return_value = True
         
-        result = download_audio_pipeline(mock_args)
+        result = route_audio_download(mock_args)
         
         # Verify result
         assert result["success"] is True
@@ -259,7 +262,7 @@ class TestMediaDownloader:
         assert result["format"] == "mp3"
         assert result["converted"] is True
 
-    @patch('app.tools.media_downloader.download_video_pipeline')
+    @patch('app.tools.media_downloader.route_video_download')
     def test_download_dispatcher_video(self, mock_video_pipeline):
         """Test download dispatcher for video"""
         mock_args = MagicMock()
@@ -272,7 +275,7 @@ class TestMediaDownloader:
         assert result == mock_result
         mock_video_pipeline.assert_called_once_with(mock_args)
 
-    @patch('app.tools.media_downloader.download_audio_pipeline')
+    @patch('app.tools.media_downloader.route_audio_download')
     def test_download_dispatcher_audio(self, mock_audio_pipeline):
         """Test download dispatcher for audio"""
         mock_args = MagicMock()
@@ -293,13 +296,12 @@ class TestMediaDownloader:
         with pytest.raises(ValueError, match="Unsupported download type: invalid"):
             download(mock_args)
 
-    @patch('app.tools.media_downloader.create_youtube_instance')
-    def test_download_video_pipeline_error(self, mock_create_yt):
+    def test_download_youtube_video_pipeline_error(self):
         """Test video download pipeline error handling"""
         mock_args = MagicMock()
-        mock_args.url = "https://youtube.com/watch?v=test"
+        mock_args.url = "https://invalid.com/watch?v=test"  # Invalid URL
+        mock_args.format = "mp4"
         
-        mock_create_yt.side_effect = Exception("Network error")
-        
-        with pytest.raises(SystemExit):
-            download_video_pipeline(mock_args)
+        # Should raise ValueError for unsupported URL
+        with pytest.raises(ValueError, match="Unsupported URL"):
+            route_video_download(mock_args)

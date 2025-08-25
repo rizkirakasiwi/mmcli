@@ -1,98 +1,196 @@
 import ffmpeg
+import os
 import textwrap
 import sys
 from pathlib import Path
 from glob import glob
 from datetime import datetime
-from typing import Optional, List
-from functools import partial
+from typing import Optional, List, Dict, Any
+from functools import partial, reduce
 from ..utils.media_format import all_formats
 
-def get_files(input_file: str) -> List[Path]:
-    """Resolve input file(s), supporting glob patterns."""
-    if "*" in input_file:
-        files = [Path(p) for p in glob(input_file)]
+
+def resolve_file_paths(input_pattern: str) -> List[Path]:
+    """Resolve input file pattern to actual file paths, supporting glob patterns."""
+    if "*" in input_pattern:
+        files = [Path(p) for p in glob(input_pattern)]
         if not files:
-            files = [Path(p) for p in glob(f"**/{input_file}", recursive=True)]
+            files = [Path(p) for p in glob(f"**/{input_pattern}", recursive=True)]
     else:
-        files = [Path(input_file)] if Path(input_file).exists() else []
+        files = [Path(input_pattern)] if Path(input_pattern).exists() else []
 
     if not files:
-        raise FileNotFoundError(f"No file(s) found matching: {input_file}")
+        raise FileNotFoundError(f"No file(s) found matching: {input_pattern}")
 
     return files
 
-def resolve_output_dir(output_dir: Optional[str]) -> Path:
-    """Ensure output directory exists and return as Path."""
-    path = (
-        Path(output_dir).resolve()
-        if output_dir
-        else Path(__file__).resolve().parent / "converter"
-    )
+
+def ensure_output_directory(output_dir: Optional[str]) -> Path:
+    """Create output directory if needed and return Path object."""
+    path = Path(output_dir) if output_dir else Path(os.getcwd()) / "convert"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
-def build_output_path(input_file: Path, output_format: str, output_dir: Path) -> Path:
-    """Generate output file path with timestamp."""
+
+def generate_output_filename(input_file: Path, output_format: str) -> str:
+    """Generate unique output filename with timestamp."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    output_file = f"{input_file.stem}_{timestamp}.{output_format}"
-    return output_dir / output_file
+    return f"{input_file.stem}_{timestamp}.{output_format}"
 
-def get_ffmpeg_format(output_format: str) -> Optional[str]:
-    """Get ffmpeg format from alias."""
-    ffmpeg_format = list(filter(lambda item: item["alias"] == output_format, all_formats))
-    return ffmpeg_format[0]["format"] if ffmpeg_format else None
 
-def convert_single_file(input_file: Path, output_format: str, output_dir: Path) -> bool:
-    """Convert a single file. Returns True if successful, False otherwise."""
-    try:
-        ffmpeg_format = get_ffmpeg_format(output_format)
-        if not ffmpeg_format:
-            print(f"Unsupported format: {output_format}")
-            return False
+def create_output_path(input_file: Path, output_format: str, output_dir: Path) -> Path:
+    """Create full output file path."""
+    output_filename = generate_output_filename(input_file, output_format)
+    return output_dir / output_filename
 
-        output_path = build_output_path(input_file, output_format, output_dir)
-        ffmpeg.input(str(input_file)).output(str(output_path), format=ffmpeg_format).run(quiet=True, overwrite_output=True)
-        
-        return True
-    except:
-        print(f"Error converting {input_file}")
+
+def find_ffmpeg_format(output_format: str) -> Optional[str]:
+    """Find matching ffmpeg format from format alias."""
+    format_matches = list(filter(lambda fmt: fmt["alias"] == output_format, all_formats))
+    return format_matches[0]["format"] if format_matches else None
+
+
+def create_conversion_config(input_file: Path, output_format: str, output_dir: Path) -> Dict[str, Any]:
+    """Create conversion configuration object."""
+    ffmpeg_format = find_ffmpeg_format(output_format)
+    output_path = create_output_path(input_file, output_format, output_dir)
+    
+    return {
+        "input_file": input_file,
+        "output_path": output_path,
+        "ffmpeg_format": ffmpeg_format,
+        "output_format": output_format
+    }
+
+
+def execute_ffmpeg_conversion(config: Dict[str, Any]) -> bool:
+    """Execute ffmpeg conversion with given configuration."""
+    if not config["ffmpeg_format"]:
+        print(f"Unsupported format: {config['output_format']}")
         return False
 
-def print_conversion_summary(results: List[bool], output_format: str, output_dir: Path) -> None:
-    """Print conversion summary."""
-    success_count = sum(results)
-    failed_count = len(results) - success_count
-    
-    summary = textwrap.dedent("""
-                              Summary:
-                              Successfully converted: {success_count}
-                              Failed to convert: {failed_count}
-                              """)
-    
-    print(f"Conversion complete.")
-    print(summary.format(success_count=success_count, failed_count=failed_count))
-    print(f"Output files can be found in: {output_dir}")
-
-def convert_files(input_files: List[Path], output_format: str, output_dir: Optional[str] = None) -> None:
-    """Convert a batch of files and log summary."""
-    print(f"Converting to {output_format}...")
-    resolved_output_dir = resolve_output_dir(output_dir)
-    
-    # Create a partial function with fixed output_format and output_dir
-    convert_file_partial = partial(convert_single_file, output_format=output_format, output_dir=resolved_output_dir)
-    
-    # Convert all files
-    results = list(map(convert_file_partial, input_files))
-    
-    # Print summary
-    print_conversion_summary(results, output_format, resolved_output_dir)
-
-def convert(args) -> None:
-    """MAIN convert dispatcher function."""
     try:
-        files = get_files(args.path)
-        convert_files(files, args.to, args.output_dir)
+        ffmpeg.input(str(config["input_file"])).output(
+            str(config["output_path"]), 
+            format=config["ffmpeg_format"]
+        ).run(quiet=True, overwrite_output=True)
+        return True
+    except Exception as e:
+        print(f"Error converting {config['input_file']}: {e}")
+        return False
+
+
+def convert_single_file_functional(
+    input_file: Path, 
+    output_format: str, 
+    output_dir: Path
+) -> Dict[str, Any]:
+    """Convert single file using functional approach with detailed result."""
+    config = create_conversion_config(input_file, output_format, output_dir)
+    success = execute_ffmpeg_conversion(config)
+    
+    return {
+        "input_file": str(input_file),
+        "output_file": str(config["output_path"]) if success else None,
+        "success": success,
+        "format": output_format
+    }
+
+
+def process_conversion_batch(
+    input_files: List[Path], 
+    output_format: str, 
+    output_dir: Path
+) -> List[Dict[str, Any]]:
+    """Process batch conversion using functional programming."""
+    convert_func = partial(
+        convert_single_file_functional,
+        output_format=output_format,
+        output_dir=output_dir
+    )
+    
+    print(f"Converting {len(input_files)} file(s) to {output_format}...")
+    return list(map(convert_func, input_files))
+
+
+def calculate_conversion_stats(results: List[Dict[str, Any]]) -> Dict[str, int]:
+    """Calculate conversion statistics from results."""
+    return reduce(
+        lambda acc, result: {
+            "total": acc["total"] + 1,
+            "success": acc["success"] + (1 if result["success"] else 0),
+            "failed": acc["failed"] + (0 if result["success"] else 1)
+        },
+        results,
+        {"total": 0, "success": 0, "failed": 0}
+    )
+
+
+def format_conversion_summary(stats: Dict[str, int], output_format: str, output_dir: str) -> str:
+    """Format conversion summary message."""
+    return textwrap.dedent(f"""
+        Summary:
+        Successfully converted: {stats['success']}
+        Failed to convert: {stats['failed']}
+        Format: {output_format}
+        Output directory: {output_dir}
+    """).strip()
+
+
+def print_conversion_results(results: List[Dict[str, Any]], output_format: str, output_dir: str) -> None:
+    """Print detailed conversion results and summary."""
+    stats = calculate_conversion_stats(results)
+    
+    print("Conversion complete.")
+    print(format_conversion_summary(stats, output_format, output_dir))
+    
+    if stats["failed"] > 0:
+        print("\nFailed conversions:")
+        failed_files = [r["input_file"] for r in results if not r["success"]]
+        for file_path in failed_files:
+            print(f"  - {file_path}")
+
+
+def convert_files_functional(
+    input_files: List[Path], 
+    output_format: str, 
+    output_dir: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """Convert batch of files using functional programming approach."""
+    resolved_output_dir = ensure_output_directory(output_dir)
+    
+    results = process_conversion_batch(input_files, output_format, resolved_output_dir)
+    print_conversion_results(results, output_format, str(resolved_output_dir))
+    
+    return results
+
+
+def validate_conversion_args(args) -> Dict[str, Any]:
+    """Validate and extract conversion arguments."""
+    if not hasattr(args, 'path') or not args.path:
+        raise ValueError("Input path is required")
+    if not hasattr(args, 'to') or not args.to:
+        raise ValueError("Output format is required")
+    
+    return {
+        "input_pattern": args.path,
+        "output_format": args.to,
+        "output_dir": getattr(args, 'output_dir', None)
+    }
+
+
+def convert(args) -> List[Dict[str, Any]]:
+    """Main convert function with functional programming approach."""
+    try:
+        validated_args = validate_conversion_args(args)
+        input_files = resolve_file_paths(validated_args["input_pattern"])
+        
+        return convert_files_functional(
+            input_files,
+            validated_args["output_format"],
+            validated_args["output_dir"]
+        )
+        
     except Exception as e:
         print(f"Error converting file: {e}")
         sys.exit(1)

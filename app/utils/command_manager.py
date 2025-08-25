@@ -70,7 +70,7 @@ def __download_command(subparsers):
     audio_parser = download_subparser.add_parser("audio", help="Download audio")
     audio_parser.add_argument("--url", "-u", required=True, help="Audio URL")
     audio_parser.add_argument(
-        "--format", "-f", help="(Optional) Output format (default: mp3)"
+        "--format", "-f", help="(Optional) Output format (default: m4a)"
     )
 
 

@@ -201,8 +201,8 @@ class TestIntegration:
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pytest.skip("CLI not available for integration testing")
 
-    @patch('app.tools.media_converter.get_files')
-    @patch('app.tools.media_converter.convert_files')
+    @patch('app.tools.media_converter.resolve_file_paths')
+    @patch('app.tools.media_converter.convert_files_functional')
     def test_end_to_end_convert_flow(self, mock_convert_files, mock_get_files):
         """Test end-to-end convert flow"""
         # Mock the file operations
@@ -217,7 +217,7 @@ class TestIntegration:
         mock_get_files.assert_called_once()
         mock_convert_files.assert_called_once()
 
-    @patch('app.tools.media_downloader.create_youtube_instance')
+    @patch('app.tools.youtube_downloader.create_youtube_instance')
     @patch('app.tools.media_downloader.ensure_directory_exists')
     def test_end_to_end_download_flow_mock(self, mock_ensure_dir, mock_create_yt):
         """Test end-to-end download flow with mocks"""

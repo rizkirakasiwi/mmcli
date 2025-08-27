@@ -1,8 +1,8 @@
+import asyncio
 import os
 import sys
 from typing import Optional, Dict, Any, List
-from functools import partial, reduce
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import reduce
 from ..utils.media_format import video_formats, get_format, audio_formats
 from ..utils.config import (
     get_output_dir_default,
@@ -11,8 +11,6 @@ from ..utils.config import (
     get_video_resolution_default,
     get_max_workers_default,
     should_create_playlist_subfolders,
-    should_use_batch_convert,
-    config
 )
 from . import media_converter
 from . import youtube_downloader
@@ -74,7 +72,7 @@ def should_convert_format(current_ext: str, target_format: str) -> bool:
     return current_ext.lower() != target_format.lower()
 
 
-def convert_if_needed(downloaded_file: str, target_format: str, args) -> str:
+async def convert_if_needed(downloaded_file: str, target_format: str, args) -> str:
     """Convert media file if format differs from target."""
     if not downloaded_file or target_format is None:
         return downloaded_file
@@ -86,9 +84,9 @@ def convert_if_needed(downloaded_file: str, target_format: str, args) -> str:
         
         args.path = downloaded_file 
         args.to = target_format 
-        args.outpur_dir = os.path.dirname(downloaded_file)
+        args.output_dir = os.path.dirname(downloaded_file)
         
-        results = media_converter.convert(args)
+        results = await media_converter.convert(args)
         
         if results and len(results) > 0 and results[0]["success"]:
             os.remove(downloaded_file)
@@ -156,7 +154,7 @@ def create_playlist_config(args, media_type: str) -> Dict[str, Any]:
     return config
 
 
-def process_single_download_result(result: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+async def process_single_download_result(result: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
     """Process single download result with conversion if needed."""
     if not result["success"]:
         return {
@@ -169,7 +167,7 @@ def process_single_download_result(result: Dict[str, Any], config: Dict[str, Any
         }
     
     original_file = result["file_path"]
-    converted_file = convert_if_needed(
+    converted_file = await convert_if_needed(
         result["file_path"], 
         config["output_format"], 
         config["args"]
@@ -194,7 +192,7 @@ def collect_downloaded_files(results: List[Dict[str, Any]]) -> List[str]:
     return [result["file_path"] for result in results if result["success"] and result["file_path"]]
 
 
-def batch_convert_playlist_files(downloaded_files: List[str], target_format: str) -> List[Dict[str, Any]]:
+async def batch_convert_playlist_files(downloaded_files: List[str], target_format: str) -> List[Dict[str, Any]]:
     """Batch convert playlist files using media_converter."""
     if not downloaded_files:
         return []
@@ -211,17 +209,11 @@ def batch_convert_playlist_files(downloaded_files: List[str], target_format: str
     
     print(f"Batch converting {len(files_to_convert)} files to {target_format} format...")
     
-    # Create mock args for batch conversion
-    class MockArgs:
-        def __init__(self, files: List[str], to: str):
-            self.path = files[0] if len(files) == 1 else f"{{{','.join(files)}}}"
-            self.to = to
-    
-    # Use media_converter for batch processing with parallel support
+    # Use media_converter for batch processing with async support
     from pathlib import Path
     input_files = [Path(f) for f in files_to_convert]
     max_workers = get_max_workers_default()
-    conversion_results = media_converter.convert_files_functional(input_files, target_format, max_workers=max_workers)
+    conversion_results = await media_converter.convert_files_functional(input_files, target_format, max_workers=max_workers)
     
     # Clean up original files that were successfully converted
     for i, result in enumerate(conversion_results):
@@ -234,7 +226,7 @@ def batch_convert_playlist_files(downloaded_files: List[str], target_format: str
     return conversion_results
 
 
-def process_playlist_results(results: List[Dict[str, Any]], config: Dict[str, Any]) -> List[Dict[str, Any]]:
+async def process_playlist_results(results: List[Dict[str, Any]], config: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Process playlist download results with batch conversion."""
     # First, collect all downloaded files
     downloaded_files = collect_downloaded_files(results)
@@ -253,7 +245,7 @@ def process_playlist_results(results: List[Dict[str, Any]], config: Dict[str, An
     
     if needs_conversion:
         # Batch convert all files
-        conversion_results = batch_convert_playlist_files(downloaded_files, target_format)
+        conversion_results = await batch_convert_playlist_files(downloaded_files, target_format)
         conversion_map = {result["input_file"]: result for result in conversion_results}
     else:
         conversion_map = {}
@@ -292,18 +284,18 @@ def process_playlist_results(results: List[Dict[str, Any]], config: Dict[str, An
     return processed_results
 
 
-def download_single_video(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Download single video using functional approach."""
+async def download_single_video(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Download single video using async approach."""
     try:
         print(f"Downloading video from: {config['url']}")
         
-        result = youtube_downloader.download_single_video(
+        result = await youtube_downloader.download_single_video(
             config["url"],
             config["output_path"],
             config["resolution"]
         )
         
-        processed_result = process_single_download_result(result, config)
+        processed_result = await process_single_download_result(result, config)
         
         if processed_result["success"]:
             status_msg = "Video converted and saved to" if processed_result["converted"] else "Video saved to"
@@ -320,17 +312,17 @@ def download_single_video(config: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-def download_single_audio(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Download single audio using functional approach."""
+async def download_single_audio(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Download single audio using async approach."""
     try:
         print(f"Downloading audio from: {config['url']}")
         
-        result = youtube_downloader.download_single_audio(
+        result = await youtube_downloader.download_single_audio(
             config["url"],
             config["output_path"]
         )
         
-        processed_result = process_single_download_result(result, config)
+        processed_result = await process_single_download_result(result, config)
         
         if processed_result["success"]:
             print(f"Audio saved to {config['output_path']}")
@@ -346,28 +338,20 @@ def download_single_audio(config: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-def download_playlist_videos(config: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Download playlist videos using parallel or sequential approach based on config."""
+async def download_playlist_videos(config: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Download playlist videos using async approach with concurrency control."""
     try:
         max_workers = get_max_workers_default()
         
-        if max_workers <= 1:
-            # Sequential download
-            results = youtube_downloader.download_playlist_videos(
-                config["url"],
-                config["output_path"],
-                config["resolution"]
-            )
-        else:
-            # Parallel download
-            results = youtube_downloader.download_playlist_videos_parallel(
-                config["url"],
-                config["output_path"],
-                config["resolution"],
-                max_workers=max_workers
-            )
+        # Always use the async function with concurrency control
+        results = await youtube_downloader.download_playlist_videos(
+            config["url"],
+            config["output_path"],
+            config["resolution"],
+            max_concurrent=max_workers
+        )
         
-        return process_playlist_results(results, config)
+        return await process_playlist_results(results, config)
         
     except Exception as e:
         return [{
@@ -378,26 +362,19 @@ def download_playlist_videos(config: Dict[str, Any]) -> List[Dict[str, Any]]:
         }]
 
 
-def download_playlist_audios(config: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Download playlist audios using parallel or sequential approach based on config."""
+async def download_playlist_audios(config: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Download playlist audios using async approach with concurrency control."""
     try:
         max_workers = get_max_workers_default()
         
-        if max_workers <= 1:
-            # Sequential download
-            results = youtube_downloader.download_playlist_audios(
-                config["url"],
-                config["output_path"]
-            )
-        else:
-            # Parallel download
-            results = youtube_downloader.download_playlist_audios_parallel(
-                config["url"],
-                config["output_path"],
-                max_workers=max_workers
-            )
+        # Always use the async function with concurrency control
+        results = await youtube_downloader.download_playlist_audios(
+            config["url"],
+            config["output_path"],
+            max_concurrent=max_workers
+        )
         
-        return process_playlist_results(results, config)
+        return await process_playlist_results(results, config)
         
     except Exception as e:
         return [{
@@ -408,7 +385,7 @@ def download_playlist_audios(config: Dict[str, Any]) -> List[Dict[str, Any]]:
         }]
 
 
-def route_video_download(args) -> Dict[str, Any] | List[Dict[str, Any]]:
+async def route_video_download(args) -> Dict[str, Any] | List[Dict[str, Any]]:
     """Route video download based on URL type."""
     url_validation = youtube_downloader.validate_youtube_url(args.url)
     
@@ -417,13 +394,13 @@ def route_video_download(args) -> Dict[str, Any] | List[Dict[str, Any]]:
     
     if url_validation["is_playlist"]:
         config = create_playlist_config(args, "video")
-        return download_playlist_videos(config)
+        return await download_playlist_videos(config)
     else:
         config = create_download_config(args, "video")
-        return download_single_video(config)
+        return await download_single_video(config)
 
 
-def route_audio_download(args) -> Dict[str, Any] | List[Dict[str, Any]]:
+async def route_audio_download(args) -> Dict[str, Any] | List[Dict[str, Any]]:
     """Route audio download based on URL type."""
     url_validation = youtube_downloader.validate_youtube_url(args.url)
     
@@ -432,10 +409,10 @@ def route_audio_download(args) -> Dict[str, Any] | List[Dict[str, Any]]:
     
     if url_validation["is_playlist"]:
         config = create_playlist_config(args, "audio")
-        return download_playlist_audios(config)
+        return await download_playlist_audios(config)
     else:
         config = create_download_config(args, "audio")
-        return download_single_audio(config)
+        return await download_single_audio(config)
 
 
 def calculate_success_stats(results: List[Dict[str, Any]]) -> Dict[str, int]:
@@ -466,7 +443,7 @@ def print_download_summary(results) -> None:
         print("Done")
 
 
-def download(args):
+async def download(args):
     """Main download dispatcher function."""
     download_functions = {
         "video": route_video_download,
@@ -478,7 +455,7 @@ def download(args):
         raise ValueError(f"Unsupported download type: {args.type}")
     
     try:
-        result = download_func(args)
+        result = await download_func(args)
         print_download_summary(result)
         return result
     except Exception as e:

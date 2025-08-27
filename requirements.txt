@@ -1,2 +1,8 @@
 ffmpeg-python
 pytubefix
+tomli>=2.0.1; python_version < '3.11'
+PyYAML>=6.0
+pytest>=6.0
+pytest-mock>=3.0
+pytest-cov>=3.0
+pytest-asyncio>=0.21.0

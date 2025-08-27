@@ -1,5 +1,6 @@
 import argparse
 from .media_format import all_formats
+from .config import config
 
 def command_manager():
     epilog_text = """
@@ -25,10 +26,11 @@ def command_manager():
     )
     
     # Add version argument
+    version = config.get("application.version", "0.1.0a1")
     parser.add_argument(
         "--version", "-v",
         action="version",
-        version="mmcli 0.1.0a1"
+        version=f"mmcli {version}"
     )
 
     # Top-level commands

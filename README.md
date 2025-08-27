@@ -12,7 +12,7 @@ MMCLI is a powerful command-line tool for **Multimedia Helper** like **downloadi
 - 🎥 Download YouTube **videos** in the best available quality
 - 🎵 Download YouTube **audio only** in original format (optional conversion with --format flag)
 - 📋 Download entire **YouTube playlists** (both video and audio)
-- ⚡ **Parallel playlist downloads** for faster performance (configurable workers)
+- ⚡ **Asynchronous concurrent downloads** for optimal performance (configurable concurrency)
 - 🎯 Choose specific video resolution (720p, 1080p, etc.)
 - 🔄 Optional format conversion with --format flag
 - 📂 Auto-organized output with playlist subfolders
@@ -22,9 +22,9 @@ MMCLI is a powerful command-line tool for **Multimedia Helper** like **downloadi
 - 🎬 Convert **video** formats (`mp4`, `avi`, `mkv`, `webm`, etc.)
 - 🎧 Convert **audio** formats (`mp3`, `wav`, `flac`, `aac`, etc.)
 - 📂 Support for **batch conversion** with wildcard paths (e.g., `samples/*.jpg`)
-- ⚡ **Parallel batch conversions** with configurable workers
+- ⚡ **Asynchronous batch conversions** with optimal resource management
 - 🎛️ **Centralized configuration** via `config.toml` for all defaults
-- ⚡ High-performance functional programming architecture
+- 🚀 **High-performance async architecture** with functional programming patterns
 
 ---
 
@@ -119,13 +119,13 @@ mmcli convert --path "large_files/*.mov" --to mp4 --max-workers 1
 
 ### Advanced Examples
 
-#### Parallel Processing with Configuration
+#### Async Concurrent Processing with Configuration
 
 Create `config.toml` for optimized performance:
 
 ```toml
 [downloads.playlist]
-max_workers = 5              # Fast playlist downloads
+max_workers = 5              # Concurrent async downloads
 
 [downloads.video]
 format = "mkv"               # Default format
@@ -135,7 +135,7 @@ resolution = "720p"          # Default resolution
 Now downloads are automatically optimized:
 
 ```bash
-# Uses config defaults (5 parallel workers, 720p, MKV format)  
+# Uses config defaults (5 concurrent downloads, 720p, MKV format)  
 mmcli download video --url "https://youtube.com/playlist?list=..."
 
 # Override specific settings
@@ -145,7 +145,7 @@ mmcli download video --url "..." --resolution 1080p --format mp4
 #### Batch Operations
 
 ```bash
-# Parallel batch conversion with 4 workers
+# Async batch conversion with 4 concurrent operations
 mmcli convert --path "photos/*.avif" --to jpg --max-workers 4
 
 # Sequential processing for large files (safe mode)
@@ -189,9 +189,9 @@ resolution = "highest"           # Default resolution
 format = "m4a"                   # Default audio format
 
 [downloads.playlist]
-max_workers = 3                  # Parallel downloads (3 workers)
+max_workers = 3                  # Concurrent async downloads (3 concurrent)
 create_subfolders = true         # Organize by playlist title
-batch_convert = true             # Efficient format conversion
+batch_convert = true             # Efficient async format conversion
 
 [conversion]
 output_dir = "converter"         # Default output directory
@@ -203,9 +203,9 @@ auto_cleanup = true              # Clean up temporary files
 
 ### Benefits
 - 🎯 **No repetitive CLI arguments** - set your preferences once
-- ⚡ **Optimized playlist downloads** - parallel processing by default
+- ⚡ **Optimized playlist downloads** - async concurrent processing by default
 - 📁 **Auto-organized output** - playlist videos in dedicated folders
-- 🔧 **Customizable performance** - adjust workers based on your system
+- 🔧 **Customizable performance** - adjust concurrency based on your system
 
 See [doc/configuration.md](doc/configuration.md) for complete configuration options.
 
@@ -223,17 +223,20 @@ See [doc/configuration.md](doc/configuration.md) for complete configuration opti
 ### Dependencies
 * **pytubefix** - YouTube downloading with playlist support
 * **ffmpeg-python** - Media conversion backend  
-* **pytest** - Testing framework (development)
+* **pytest** + **pytest-asyncio** - Testing framework with async support (development)
 
 ### Architecture
+* **Asynchronous Programming**: Built with `async/await` patterns for optimal performance
 * **Functional Programming**: Uses `map`, `reduce`, `partial`, and pure functions
 * **Configuration Objects**: Structured data flow instead of parameter passing
 * **Error Handling**: Graceful failure with detailed error reporting
-* **Test Coverage**: 103+ tests ensuring reliability
+* **Test Coverage**: 103+ tests ensuring reliability with async support
 
 ### Performance
-* **Parallel playlist downloads** with configurable workers (default: 3)
-* **Parallel batch conversions** for multiple files
+* **Async concurrent downloads** with semaphore-based resource management (default: 3)
+* **Async batch conversions** with optimal resource utilization
+* **Lower memory footprint** - no thread pool overhead
+* **Better resource efficiency** - precise concurrency control with semaphores
 * Memory-efficient streaming for large files
 * Automatic cleanup of temporary files
 * Smart sequential fallback for single operations
@@ -268,32 +271,32 @@ pytest
 pytest --cov=app --cov-report=html --cov-report=term-missing
 
 # Run specific test suites
-pytest tests/test_playlist_downloader.py    # Playlist functionality tests
-pytest tests/test_media_converter.py        # Conversion functionality tests
-pytest tests/test_media_downloader.py       # Download functionality tests
-pytest tests/test_integration.py            # End-to-end integration tests
+pytest tests/test_playlist_downloader.py    # Async playlist functionality tests
+pytest tests/test_media_converter.py        # Async conversion functionality tests
+pytest tests/test_media_downloader.py       # Async download functionality tests
+pytest tests/test_integration.py            # End-to-end async integration tests
 ```
 
 **Test Coverage Includes:**
-- ✅ Single video/audio downloads
-- ✅ Playlist downloads (video and audio)
-- ✅ Media format conversions
+- ✅ Async single video/audio downloads
+- ✅ Async playlist downloads (video and audio)
+- ✅ Async media format conversions
 - ✅ Error handling and edge cases
 - ✅ CLI argument parsing
-- ✅ Integration testing
+- ✅ Async integration testing
 - ✅ URL validation and routing
 
 ### Project Architecture
 
-MMCLI uses a **functional programming architecture** for better maintainability and testability:
+MMCLI uses an **asynchronous functional programming architecture** for better maintainability and testability:
 
 ```
 mmcli/
 ├── app/
 │   ├── tools/          # Core functionality modules
-│   │   ├── media_converter.py      # Media format conversion (parallel support)
-│   │   ├── media_downloader.py     # Download orchestration (config-driven)
-│   │   └── youtube_downloader.py   # YouTube-specific operations (parallel)
+│   │   ├── media_converter.py      # Async media format conversion
+│   │   ├── media_downloader.py     # Async download orchestration (config-driven)
+│   │   └── youtube_downloader.py   # Async YouTube-specific operations
 │   └── utils/          # Utility modules  
 │       ├── command_manager.py      # CLI argument parsing
 │       ├── media_format.py         # Format definitions
@@ -315,12 +318,13 @@ mmcli/
 ```
 
 **Key Architecture Features:**
+- **Asynchronous Programming**: Built with `async/await` patterns for optimal performance
 - **Functional Programming**: Pure functions, immutable data flow
-- **Parallel Processing**: ThreadPoolExecutor for playlist downloads and batch conversions
+- **Concurrent Processing**: Asyncio with semaphore-based concurrency control
 - **Centralized Configuration**: TOML/YAML config system with smart defaults
 - **Separation of Concerns**: YouTube logic separated from general download logic  
 - **Configuration-Based**: Functions use configuration objects for parameters
-- **Comprehensive Testing**: 103+ tests covering all functionality including playlists
+- **Comprehensive Testing**: 103+ async tests covering all functionality including playlists
 
 ---
 
@@ -328,12 +332,14 @@ mmcli/
 
 ### ✅ Recently Completed
 * [x] **YouTube playlist downloader** (both video and audio)
-* [x] **Parallel playlist downloads** for faster performance
+* [x] **Asynchronous architecture conversion** - migrated from ThreadPoolExecutor to async/await
+* [x] **Concurrent playlist downloads** with semaphore-based resource management
 * [x] **Centralized configuration system** via `config.toml`
-* [x] **Parallel batch conversions** with configurable workers
+* [x] **Async batch conversions** with optimal resource utilization
 * [x] **Functional programming refactor** for better maintainability  
-* [x] **Comprehensive test coverage** (103+ tests including playlist tests)
+* [x] **Comprehensive async test coverage** (103+ tests with pytest-asyncio)
 * [x] **Separated YouTube logic** into dedicated module
+* [x] **Performance improvements** - lower memory footprint, better resource efficiency
 
 ### 🔄 In Progress / Planned
 * [ ] Allow multiple YouTube URLs in one command

@@ -1,3 +1,4 @@
+import asyncio
 import ffmpeg
 import os
 import textwrap
@@ -7,7 +8,6 @@ from glob import glob
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from functools import partial, reduce
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from ..utils.media_format import all_formats
 from ..utils.config import get_max_workers_default
 
@@ -65,31 +65,35 @@ def create_conversion_config(input_file: Path, output_format: str, output_dir: P
     }
 
 
-def execute_ffmpeg_conversion(config: Dict[str, Any]) -> bool:
-    """Execute ffmpeg conversion with given configuration."""
+async def execute_ffmpeg_conversion(config: Dict[str, Any]) -> bool:
+    """Execute ffmpeg conversion with given configuration asynchronously."""
     if not config["ffmpeg_format"]:
         print(f"Unsupported format: {config['output_format']}")
         return False
 
-    try:
-        ffmpeg.input(str(config["input_file"])).output(
-            str(config["output_path"]), 
-            format=config["ffmpeg_format"]
-        ).run(quiet=True, overwrite_output=True)
-        return True
-    except Exception as e:
-        print(f"Error converting {config['input_file']}: {e}")
-        return False
+    def _convert():
+        try:
+            ffmpeg.input(str(config["input_file"])).output(
+                str(config["output_path"]), 
+                format=config["ffmpeg_format"]
+            ).run(quiet=True, overwrite_output=True)
+            return True
+        except Exception as e:
+            print(f"Error converting {config['input_file']}: {e}")
+            return False
+    
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _convert)
 
 
-def convert_single_file_functional(
+async def convert_single_file_functional(
     input_file: Path, 
     output_format: str, 
     output_dir: Path
 ) -> Dict[str, Any]:
     """Convert single file using functional approach with detailed result."""
     config = create_conversion_config(input_file, output_format, output_dir)
-    success = execute_ffmpeg_conversion(config)
+    success = await execute_ffmpeg_conversion(config)
     
     return {
         "input_file": str(input_file),
@@ -99,60 +103,69 @@ def convert_single_file_functional(
     }
 
 
-def process_conversion_batch(
+async def process_conversion_batch(
     input_files: List[Path], 
     output_format: str, 
     output_dir: Path,
-    max_workers: int = 1
+    max_concurrent: int = 1
 ) -> List[Dict[str, Any]]:
-    """Process batch conversion using parallel or sequential approach."""
-    convert_func = partial(
-        convert_single_file_functional,
-        output_format=output_format,
-        output_dir=output_dir
-    )
+    """Process batch conversion using async concurrency control."""
     
-    if len(input_files) == 1 or max_workers <= 1:
-        # Sequential conversion for single files or when max_workers is 1
-        print(f"Converting {len(input_files)} file(s) to {output_format}...")
-        return list(map(convert_func, input_files))
-    else:
-        # Parallel conversion for multiple files
-        print(f"Converting {len(input_files)} file(s) to {output_format} using {max_workers} workers...")
-        results = []
-        
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all conversion tasks
-            future_to_file = {
-                executor.submit(convert_func, input_file): input_file 
-                for input_file in input_files
+    async def convert_with_feedback(input_file: Path) -> Dict[str, Any]:
+        try:
+            result = await convert_single_file_functional(input_file, output_format, output_dir)
+            if result["success"]:
+                print(f"[OK] Converted {input_file.name}")
+            else:
+                print(f"[FAIL] Failed to convert {input_file.name}")
+            return result
+        except Exception as e:
+            print(f"[ERROR] Error converting {input_file.name}: {e}")
+            return {
+                "input_file": str(input_file),
+                "output_file": None,
+                "success": False,
+                "format": output_format,
+                "error": str(e)
             }
-            
-            # Collect results as they complete
-            for future in as_completed(future_to_file):
-                input_file = future_to_file[future]
-                try:
-                    result = future.result()
-                    results.append(result)
-                    if result["success"]:
-                        print(f"✓ Converted {input_file.name}")
-                    else:
-                        print(f"✗ Failed to convert {input_file.name}")
-                except Exception as e:
-                    print(f"✗ Error converting {input_file.name}: {e}")
-                    results.append({
-                        "input_file": str(input_file),
-                        "output_file": None,
-                        "success": False,
-                        "format": output_format,
-                        "error": str(e)
-                    })
-        
-        # Sort results to match input file order
-        file_order = {str(f): i for i, f in enumerate(input_files)}
-        results.sort(key=lambda r: file_order.get(r["input_file"], 999))
-        
+    
+    if len(input_files) == 1 or max_concurrent <= 1:
+        # Sequential conversion for single files or when max_concurrent is 1
+        print(f"Converting {len(input_files)} file(s) to {output_format}...")
+        results = []
+        for input_file in input_files:
+            result = await convert_with_feedback(input_file)
+            results.append(result)
         return results
+    else:
+        # Concurrent conversion for multiple files
+        print(f"Converting {len(input_files)} file(s) to {output_format} using max {max_concurrent} concurrent conversions...")
+        
+        # Use semaphore to limit concurrent conversions
+        semaphore = asyncio.Semaphore(max_concurrent)
+        
+        async def convert_with_semaphore(input_file: Path):
+            async with semaphore:
+                return await convert_with_feedback(input_file)
+        
+        tasks = [convert_with_semaphore(input_file) for input_file in input_files]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Handle exceptions in results
+        processed_results = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                processed_results.append({
+                    "input_file": str(input_files[i]),
+                    "output_file": None,
+                    "success": False,
+                    "format": output_format,
+                    "error": str(result)
+                })
+            else:
+                processed_results.append(result)
+        
+        return processed_results
 
 
 def calculate_conversion_stats(results: List[Dict[str, Any]]) -> Dict[str, int]:
@@ -193,16 +206,16 @@ def print_conversion_results(results: List[Dict[str, Any]], output_format: str, 
             print(f"  - {file_path}")
 
 
-def convert_files_functional(
+async def convert_files_functional(
     input_files: List[Path], 
     output_format: str, 
     output_dir: Optional[str] = None,
     max_workers: int = 1
 ) -> List[Dict[str, Any]]:
-    """Convert batch of files using parallel or sequential approach."""
+    """Convert batch of files using async concurrency."""
     resolved_output_dir = ensure_output_directory(output_dir)
     
-    results = process_conversion_batch(input_files, output_format, resolved_output_dir, max_workers)
+    results = await process_conversion_batch(input_files, output_format, resolved_output_dir, max_workers)
     print_conversion_results(results, output_format, str(resolved_output_dir))
     
     return results
@@ -228,13 +241,13 @@ def validate_conversion_args(args) -> Dict[str, Any]:
     }
 
 
-def convert(args) -> List[Dict[str, Any]]:
-    """Main convert function with functional programming approach."""
+async def convert(args) -> List[Dict[str, Any]]:
+    """Main convert function with async approach."""
     try:
         validated_args = validate_conversion_args(args)
         input_files = resolve_file_paths(validated_args["input_pattern"])
         
-        return convert_files_functional(
+        return await convert_files_functional(
             input_files,
             validated_args["output_format"],
             validated_args["output_dir"],

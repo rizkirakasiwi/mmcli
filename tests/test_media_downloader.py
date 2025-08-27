@@ -163,23 +163,26 @@ class TestMediaDownloader:
 
     @patch('app.tools.media_downloader.media_converter')
     @patch('os.remove')
-    def test_convert_media_if_needed_conversion_required(self, mock_remove, mock_converter):
+    @pytest.mark.asyncio
+    async def test_convert_media_if_needed_conversion_required(self, mock_remove, mock_converter):
         """Test media conversion when needed"""
         mock_args = MagicMock()
-        mock_converter.convert.return_value = [{"success": True, "output_file": "test.mp4"}]
+        from unittest.mock import AsyncMock
+        mock_converter.convert.side_effect = AsyncMock(return_value=[{"success": True, "output_file": "test.mp4"}])
         
-        result = convert_if_needed("test.webm", "mp4", mock_args)
+        result = await convert_if_needed("test.webm", "mp4", mock_args)
         
         assert result == "test.mp4"
         mock_remove.assert_called_once_with("test.webm")
 
     @patch('app.tools.media_downloader.media_converter')
     @patch('os.remove')
-    def test_convert_media_if_needed_no_conversion(self, mock_remove, mock_converter):
+    @pytest.mark.asyncio
+    async def test_convert_media_if_needed_no_conversion(self, mock_remove, mock_converter):
         """Test media conversion when not needed"""
         mock_args = MagicMock()
         
-        result = convert_if_needed("test.mp4", "mp4", mock_args)
+        result = await convert_if_needed("test.mp4", "mp4", mock_args)
         
         assert result == "test.mp4"
         mock_converter.convert.assert_not_called()
@@ -192,7 +195,8 @@ class TestMediaDownloader:
     @patch('app.tools.media_downloader.ensure_directory_exists')
     @patch('app.tools.youtube_downloader.download_stream')
     @patch('app.tools.media_downloader.convert_if_needed')
-    def test_download_youtube_video_pipeline_success(self, mock_convert, mock_download, 
+    @pytest.mark.asyncio
+    async def test_download_youtube_video_pipeline_success(self, mock_convert, mock_download, 
                                            mock_ensure_dir, mock_select_stream,
                                            mock_create_yt, mock_get_format,
                                            mock_get_dir):
@@ -212,9 +216,10 @@ class TestMediaDownloader:
         mock_select_stream.return_value = mock_stream
         mock_ensure_dir.return_value = "/downloads/videos"
         mock_download.return_value = "/downloads/videos/test.mp4"
-        mock_convert.return_value = "/downloads/videos/test.mp4"
+        from unittest.mock import AsyncMock
+        mock_convert.side_effect = AsyncMock(return_value="/downloads/videos/test.mp4")
         
-        result = route_video_download(mock_args)
+        result = await route_video_download(mock_args)
         
         # Verify result
         assert result["success"] is True
@@ -234,7 +239,8 @@ class TestMediaDownloader:
     @patch('app.tools.media_downloader.ensure_directory_exists')
     @patch('app.tools.youtube_downloader.download_stream')
     @patch('app.tools.media_downloader.convert_if_needed')
-    def test_download_audio_pipeline_success(self, mock_convert, mock_download,
+    @pytest.mark.asyncio
+    async def test_download_audio_pipeline_success(self, mock_convert, mock_download,
                                            mock_ensure_dir, mock_create_yt,
                                            mock_get_format, mock_get_dir):
         """Test successful audio download pipeline"""
@@ -252,9 +258,10 @@ class TestMediaDownloader:
         mock_yt.streams.get_audio_only.return_value = mock_stream
         mock_ensure_dir.return_value = "/downloads/audios"
         mock_download.return_value = "/downloads/audios/test.webm"
-        mock_convert.return_value = True
+        from unittest.mock import AsyncMock
+        mock_convert.side_effect = AsyncMock(return_value=True)
         
-        result = route_audio_download(mock_args)
+        result = await route_audio_download(mock_args)
         
         # Verify result
         assert result["success"] is True
@@ -263,40 +270,46 @@ class TestMediaDownloader:
         assert result["converted"] is True
 
     @patch('app.tools.media_downloader.route_video_download')
-    def test_download_dispatcher_video(self, mock_video_pipeline):
+    @pytest.mark.asyncio
+    async def test_download_dispatcher_video(self, mock_video_pipeline):
         """Test download dispatcher for video"""
         mock_args = MagicMock()
         mock_args.type = "video"
         mock_result = {"success": True}
-        mock_video_pipeline.return_value = mock_result
+        from unittest.mock import AsyncMock
+        mock_video_pipeline.side_effect = AsyncMock(return_value=mock_result)
         
-        result = download(mock_args)
+        result = await download(mock_args)
         
         assert result == mock_result
         mock_video_pipeline.assert_called_once_with(mock_args)
 
     @patch('app.tools.media_downloader.route_audio_download')
-    def test_download_dispatcher_audio(self, mock_audio_pipeline):
+    @pytest.mark.asyncio
+    async def test_download_dispatcher_audio(self, mock_audio_pipeline):
         """Test download dispatcher for audio"""
         mock_args = MagicMock()
         mock_args.type = "audio"
         mock_result = {"success": True}
-        mock_audio_pipeline.return_value = mock_result
+        from unittest.mock import AsyncMock
+        mock_audio_pipeline.side_effect = AsyncMock(return_value=mock_result)
         
-        result = download(mock_args)
+        result = await download(mock_args)
         
         assert result == mock_result
         mock_audio_pipeline.assert_called_once_with(mock_args)
 
-    def test_download_dispatcher_invalid_type(self):
+    @pytest.mark.asyncio
+    async def test_download_dispatcher_invalid_type(self):
         """Test download dispatcher with invalid type"""
         mock_args = MagicMock()
         mock_args.type = "invalid"
         
         with pytest.raises(ValueError, match="Unsupported download type: invalid"):
-            download(mock_args)
+            await download(mock_args)
 
-    def test_download_youtube_video_pipeline_error(self):
+    @pytest.mark.asyncio
+    async def test_download_youtube_video_pipeline_error(self):
         """Test video download pipeline error handling"""
         mock_args = MagicMock()
         mock_args.url = "https://invalid.com/watch?v=test"  # Invalid URL
@@ -304,4 +317,4 @@ class TestMediaDownloader:
         
         # Should raise ValueError for unsupported URL
         with pytest.raises(ValueError, match="Unsupported URL"):
-            route_video_download(mock_args)
+            await route_video_download(mock_args)

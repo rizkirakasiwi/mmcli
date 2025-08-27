@@ -6,19 +6,7 @@ import os
 # Add the parent directory to sys.path so we can import our modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.tools import media_converter, media_downloader
-from app.utils import command_manager
-
-def main():
-    args = command_manager.command_manager()
-    if args.command == "download":
-        media_downloader.download(args)
-    elif args.command == "convert":
-        media_converter.convert(args)
-    else:
-        print("Command not found")
-        args.print_help()
-
+from main import main
 
 if __name__ == "__main__":
     main()

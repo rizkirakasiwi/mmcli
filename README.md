@@ -2,7 +2,7 @@
 
 MMCLI is a powerful command-line tool for **Multimedia Helper** like **downloading YouTube videos/playlists** and **converting multimedia files** (images, audio, video) into different formats.
 
-✨ **Project Status:** Recently refactored with functional programming architecture and comprehensive test coverage. The project is stable and production-ready for basic operations while continuing active development.
+✨ **Project Status:** Recently in active development. Expect frequent updates and changes.
 
 ---
 

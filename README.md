@@ -39,12 +39,6 @@ git clone https://github.com/rizkirakasiwi/mmcli.git
 cd mmcli
 pip install -e .
 ```
-
-### Quick Install with pip
-```bash
-pip install mmcli
-```
-
 ---
 
 ## 🚀 Usage
